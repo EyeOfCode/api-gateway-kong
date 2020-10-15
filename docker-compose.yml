@@ -1,0 +1,80 @@
+version: "3"
+
+services:
+  mongo:
+    image: mongo
+    volumes:
+      - mongo_data:/data/configdb
+      - mongo_data:/data/db
+    ports:
+      - 27017:27017
+
+  postgres-ts:
+    image: timescale/timescaledb:latest-pg12
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: password
+      POSTGRES_DATABASES: kong
+      PG_DATA: /var/lib/postgresql/data
+    volumes:
+      - pgdata_ts:/var/lib/postgresql/data
+    ports:
+      - 5444:5444
+
+  konga:
+    image: pantsel/konga:latest
+    environment:
+      TOKEN_SECRET: "TOKEN_SECRET"
+      DB_ADAPTER: mongo
+      DB_URI: mongodb://mongo:27017/konga
+      KONGA_HOOK_TIMEOUT: 120000
+    depends_on:
+      - mongo
+    ports:
+      - 1337:1337
+
+  kong-migrations:
+    image: kong:latest
+    command: kong migrations bootstrap
+    depends_on:
+      - postgres-ts
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_DATABASE: kong
+      KONG_PG_HOST: postgres-ts
+      KONG_PG_PASSWORD: password
+      KONG_PG_USER: kong
+    links:
+      - postgres-ts:postgres-ts
+    restart: on-failure
+
+  kong:
+    image: kong:latest
+    depends_on:
+      - postgres-ts
+    environment:
+      TOKEN_SECRET: "TOKEN_SECRET"
+      KONG_CASSANDRA_CONTACT_POINTS: postgres-ts
+      KONG_DATABASE: postgres
+      KONG_PG_DATABASE: kong
+      KONG_PG_HOST: postgres-ts
+      KONG_PG_PASSWORD: password
+      KONG_PG_USER: kong
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    volumes:
+      - /var/lib/kong/declarative
+    ports:
+      - 80:8000
+      - 8443:8443
+      - 127.0.0.1:8001:8001
+      - 127.0.0.1:8444:8444
+
+volumes:
+  pgdata_ts:
+  mongo_data:
+    name: global_mongo
